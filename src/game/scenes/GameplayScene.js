@@ -30,6 +30,10 @@ export class GameplayScene extends Phaser.Scene {
     this.multiplayer = multiplayer;
     this.remotePlayers = new Map();
     this.worldSeed = null;
+    this.authoritativeState = null;
+    this.processedEvents = new Set();
+    this.authoritativeDungeonEntities = new Map();
+    this.multiplayerDungeonActive = false;
     this.lastWorldUpdate = 0; this.lastAttack = 0; this.lastSave = 0; this.lastRender = 0; this.lastPointUpdate = 0; this.lastEnemyAttack = 0;
     this.lastChunkUpdate = 0; this.lastEnemyAiUpdate = 0; this.lastTargetUpdate = 0;
     this.lastFootstep = 0;
@@ -97,7 +101,7 @@ export class GameplayScene extends Phaser.Scene {
     this.multiplayer?.connect(character);
     this.generator = new WorldGenerator(this.worldSeed ?? character.seed);
     this.chunks = new ChunkManager(this.generator, 1);
-    this.renderer = new ProceduralRenderer(this, character.seed);
+    this.renderer = new ProceduralRenderer(this, this.worldSeed ?? character.seed);
     this.playerEntity = new PlayerEntity(this, character);
     this.floatingWeapon = new FloatingWeapon(this, character);
     const { x, y } = character.position;
@@ -118,7 +122,72 @@ export class GameplayScene extends Phaser.Scene {
     this.chunks = new ChunkManager(this.generator, 1);
     this.renderer = new ProceduralRenderer(this, this.worldSeed);
     this.updateWorld(true);
-    this.setMultiplayerPlayers(message.players ?? []);
+    if (message.state) this.setAuthoritativeState(message.state);
+    else this.setMultiplayerPlayers(message.players ?? []);
+  }
+  setAuthoritativeState(state) {
+    if (!state || !Array.isArray(state.players)) return;
+    const character = this.getCharacter();
+    if (state.worldSeed && state.worldSeed !== this.worldSeed) {
+      this.worldSeed = state.worldSeed;
+      this.generator = new WorldGenerator(this.worldSeed);
+      this.chunks = new ChunkManager(this.generator, 1);
+      this.renderer?.destroy();
+      this.renderer = new ProceduralRenderer(this, this.worldSeed);
+      this.currentChunkKey = null;
+      this.updateWorld(true);
+    }
+      if (character && state.self) { 
+      Object.assign(character, structuredClone(state.self));
+      this.playerEntity?.setPosition(character.position.x, character.position.y);
+    }
+    this.authoritativeState = state;
+    if (state.dungeon?.active) {
+      if (!this.multiplayerDungeonActive || this.dungeonAnchorX !== state.dungeon.x || this.dungeonAnchorY !== state.dungeon.y) this.createDungeonRoom({ x: state.dungeon.x, y: state.dungeon.y });
+      this.dungeonAnchorX = state.dungeon.x;
+      this.dungeonAnchorY = state.dungeon.y;
+      this.multiplayerDungeonActive = true;
+      this.ui.setDungeonProgress(`CRIPTA · ONDA ${state.dungeon.wave}/3 · ${state.dungeon.waveName}`, state.dungeon.enemies, true);
+    } else if (this.multiplayerDungeonActive) {
+      this.multiplayerDungeonActive = false;
+      this.clearDungeonRoom();
+      this.ui.setDungeonProgress('', 0, false);
+    }
+    const flags = state.worldFlags ?? {};
+    for (const point of this.cachedWorldPoints) {
+      if (flags[point.id]) {
+        point.dead = point.kind === 'monster' || point.kind === 'slime';
+        point.collected = point.kind === 'resource';
+        this.renderer.removePoint(point.id);
+      }
+    }
+    const visibleDungeonIds = new Set();
+    for (const monster of state.monsters ?? []) {
+      const point = this.cachedWorldPoints.find((candidate) => candidate.id === monster.id);
+      let renderPoint = point;
+      if (!renderPoint && this.multiplayerDungeonActive) {
+        visibleDungeonIds.add(monster.id);
+        renderPoint = this.authoritativeDungeonEntities.get(monster.id);
+        if (!renderPoint) {
+          renderPoint = { ...monster, kind: 'monster', dungeonInstance: true, attackRange: 48, attackStyle: 'melee', drops: {}, dead: false };
+          const key = this.generator.chunkKey(Math.floor(monster.x / CHUNK_SIZE), Math.floor(monster.y / CHUNK_HEIGHT));
+          this.renderer.addTransient(renderPoint, key);
+          this.authoritativeDungeonEntities.set(monster.id, renderPoint);
+        }
+      }
+      if (!renderPoint) continue;
+      renderPoint.x = monster.x; renderPoint.y = monster.y; renderPoint.hp = monster.hp; renderPoint.maxHp = monster.maxHp;
+      const visual = this.renderer.pointObjects.get(renderPoint.id);
+      if (visual) visual.container.setPosition(renderPoint.x, renderPoint.y).setDepth(renderPoint.y + 2);
+      this.renderer.updatePoint(renderPoint);
+    }
+    for (const [id] of this.authoritativeDungeonEntities) {
+      if (visibleDungeonIds.has(id)) continue;
+      this.renderer.removePoint(id);
+      this.authoritativeDungeonEntities.delete(id);
+    }
+    this.setMultiplayerPlayers(state.players);
+    this.processAuthoritativeEvents(state.events ?? []);
   }
   setMultiplayerPlayers(players) {
     const ownId = this.multiplayer?.clientId;
@@ -164,6 +233,11 @@ export class GameplayScene extends Phaser.Scene {
   update(_time, delta) {
     const character = this.getCharacter();
     if (!character || character.status !== 'alive' || !this.playerEntity) return;
+    if (this.multiplayer) {
+      if (!this.multiplayer.connected || !this.authoritativeState) return;
+      this.updateAuthoritative(delta);
+      return;
+    }
     const now = this.time.now;
     const currentChunk = this.generator.chunkKey(Math.floor(character.position.x / CHUNK_SIZE), Math.floor(character.position.y / CHUNK_HEIGHT));
     const chunkChanged = currentChunk !== this.currentChunkKey;
@@ -328,6 +402,86 @@ export class GameplayScene extends Phaser.Scene {
       remote.label.setPosition(x, y - 42).setDepth(y + 30);
     }
   }
+  updateAuthoritative(_delta) {
+    const character = this.getCharacter();
+    const state = this.authoritativeState;
+    if (!character || !state) return;
+    const now = this.time.now;
+    const currentChunk = this.generator.chunkKey(Math.floor(character.position.x / CHUNK_SIZE), Math.floor(character.position.y / CHUNK_HEIGHT));
+    if (currentChunk !== this.currentChunkKey || now - this.lastChunkUpdate >= 180) {
+      this.loadedChunks = this.chunks.update(character.position, {});
+      this.cachedWorldPoints = this.loadedChunks.flatMap((chunk) => chunk.points).filter((point) => !point.dead && !point.collected);
+      this.currentChunkKey = currentChunk;
+      this.lastChunkUpdate = now;
+      this.renderer.render(this.loadedChunks);
+    }
+    this.playerEntity.setPosition(character.position.x, character.position.y);
+    this.playerEntity.body.setScale(character.facing ?? 1, 1);
+    this.playerEntity.update(now, character.autoEnabled);
+    this.floatingWeapon.update(now, character.position.x, character.position.y, false);
+    this.updateWorldLighting(now, this.loadedChunks);
+    for (const remote of this.remotePlayers.values()) {
+      const x = Phaser.Math.Linear(remote.entity.body.x, remote.targetX, 0.32);
+      const y = Phaser.Math.Linear(remote.entity.body.y, remote.targetY, 0.32);
+      remote.entity.setPosition(x, y);
+      remote.entity.body.setScale(remote.character.facing < 0 ? -1 : 1, 1);
+      remote.entity.update(now, Math.hypot(remote.targetX - x, remote.targetY - y) > 3);
+      remote.weapon.update(now, x, y, false);
+      remote.label.setPosition(x, y - 42).setDepth(y + 30);
+    }
+    for (const point of this.cachedWorldPoints) {
+      if (point.kind === 'monster' || point.kind === 'slime') this.renderer.updatePoint(point);
+    }
+    if (now - this.lastRender > 250) {
+      this.ui.render(character, BiomeSystem.at(character.position.x, character.position.y), this.loadedChunks.length, state.skillStates ?? [], this.loadedChunks);
+      this.lastRender = now;
+    }
+  }
+  processAuthoritativeEvents(events) {
+    for (const event of events) {
+      const key = `${event.type}:${event.playerId ?? ''}:${event.monsterId ?? event.pointId ?? event.at}`;
+      if (this.processedEvents.has(key)) continue;
+      this.processedEvents.add(key);
+      if (this.processedEvents.size > 200) this.processedEvents.delete(this.processedEvents.values().next().value);
+      const character = this.getCharacter();
+      const local = event.playerId === this.multiplayer?.clientId;
+      if (event.type === 'attack') {
+        if (event.skillId && local) this.audio.playSkill(event.skillId);
+        else if (local) this.audio.playBasicAttack(character?.classId);
+        if (event.hit) {
+          const target = this.cachedWorldPoints.find((point) => point.id === event.targetId);
+          const x = target?.x ?? event.x;
+          const y = target?.y ?? event.y;
+          this.effects.hit(x, y, CLASS_CATALOG[character?.classId ?? 'warrior'].color);
+          if (local) this.damageNumber({ x, y }, event.damage ?? 0);
+        }
+      } else if (event.type === 'monsterAttack' && local) {
+        this.effects.damageFlash(event.x, event.y, 1);
+        if (event.damage) this.damageNumber({ x: event.x, y: event.y - 16 }, event.damage);
+        this.ui.log(event.dodged ? 'Você esquivou do ataque do monstro.' : `Monstro causou ${event.damage} de dano.`, event.dodged ? 'good' : 'danger');
+      } else if (event.type === 'gather' && local) {
+        this.audio.playUi('upgrade');
+        this.ui.notice(`+${event.amount} ${(RESOURCE_CATALOG[event.resource]?.name ?? event.resource).toLocaleUpperCase('pt-BR')}`, 'good');
+      } else if (event.type === 'defeat') {
+        this.effects.gatherSuccess(event.x, event.y);
+        if (local) this.ui.notice(`+${event.xp} XP · MONSTRO DERROTADO`, 'good');
+      } else if (event.type === 'respawn' && local) {
+        this.ui.notice('RETORNO À CIDADE · VIDA RESTAURADA', 'good');
+      } else if (event.type === 'craft' && local) {
+        this.ui.notice(`${event.weapon} CRIADA`, 'good');
+      } else if (event.type === 'dungeonError' && local) {
+        this.ui.notice(event.message, 'danger');
+      } else if (event.type === 'dungeonStart' && local) {
+        this.ui.notice(event.solo ? 'DUNGEON SOLO INICIADA' : 'DUNGEON COOPERATIVA INICIADA', 'good');
+      } else if (event.type === 'dungeonWave') {
+        this.ui.notice(`ONDA ${event.wave}/3 · ${event.waveName}`, 'good');
+      } else if (event.type === 'dungeonComplete' && local) {
+        this.ui.notice('CRIPTA CONCLUÍDA · RECOMPENSAS ENTREGUES', 'good');
+      } else if (event.type === 'dungeonWave' && (event.participantIds ?? []).includes(this.multiplayer?.clientId)) {
+        this.ui.setDungeonProgress(`CRIPTA · ONDA ${event.wave}/3 · ${event.waveName}`, event.enemies, true);
+      }
+    }
+  }
   collidesWithObstacle(x, y, obstacles) {
     return obstacles.some((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.collisionRadius + 10);
   }
@@ -396,7 +550,7 @@ export class GameplayScene extends Phaser.Scene {
     const cycle = this.worldClock.dayLength ?? 1200000;
     const phase = ((serverNow % cycle) + cycle) % cycle / cycle;
     const daylight = (Math.cos((phase - 0.5) * Math.PI * 2) + 1) / 2;
-    const darkness = this.dungeonSystem.active ? 0.9 : Math.min(0.9, Math.max(0, (0.54 - daylight) * 1.8));
+    const darkness = this.dungeonSystem.active || this.multiplayerDungeonActive ? 0.9 : Math.min(0.9, Math.max(0, (0.54 - daylight) * 1.8));
     this.worldClockDetails = BiomeSystem.clockAt(serverNow, cycle);
     const width = this.nightVeil.clientWidth;
     const height = this.nightVeil.clientHeight;

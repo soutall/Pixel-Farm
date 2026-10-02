@@ -18,7 +18,13 @@ const DAY_LENGTH_MS = 20 * 60 * 1000;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '32kb' }));
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', game: 'FARM OF PIXEL', multiplayer: 'realtime', onlinePlayers: multiplayer?.sockets.size ?? 0 }));
+app.get('/api/health', (_req, res) => res.json({
+  status: 'ok', game: 'FARM OF PIXEL', multiplayer: 'authoritative-realtime',
+  onlinePlayers: multiplayer?.sockets.size ?? 0,
+  activeChunks: multiplayer?.world.chunks.size ?? 0,
+  activeMonsters: multiplayer?.world.points.size ?? 0,
+  worldSeed: multiplayer?.worldSeed ?? null
+}));
 app.get('/api/world-time', (_req, res) => {
   const serverTime = Date.now();
   const phase = ((serverTime % DAY_LENGTH_MS) + DAY_LENGTH_MS) % DAY_LENGTH_MS / DAY_LENGTH_MS;
@@ -56,10 +62,11 @@ app.use('/node_modules', express.static(path.join(projectRoot, 'node_modules')))
 app.use(express.static(publicDir, { extensions: ['html'] }));
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
-multiplayer = attachMultiplayer(server);
+multiplayer = attachMultiplayer(server, { findParty: (id) => parties.get(id) ?? null });
 server.listen(port, '0.0.0.0', () => {
   console.log(`FARM OF PIXEL disponível em http://localhost:${port}`);
 });
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close(() => process.exit(0)));
 
 function cleanName(value) { return String(value ?? 'Aventureiro').trim().slice(0, 18) || 'Aventureiro'; }
 function publicParty(party) { return { id: party.id, createdAt: party.createdAt, members: party.members }; }

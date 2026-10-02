@@ -1,7 +1,7 @@
 export class MultiplayerClient {
-  constructor({ onWelcome = () => {}, onPlayers = () => {}, onStatus = () => {} } = {}) {
+  constructor({ onWelcome = () => {}, onState = () => {}, onStatus = () => {} } = {}) {
     this.onWelcome = onWelcome;
-    this.onPlayers = onPlayers;
+    this.onState = onState;
     this.onStatus = onStatus;
     this.socket = null;
     this.character = null;
@@ -26,7 +26,11 @@ export class MultiplayerClient {
     socket.addEventListener('open', () => {
       if (generation !== this.generation) return;
       this.retry = 0;
-      socket.send(JSON.stringify({ type: 'join', character: { name: character.name, classId: character.classId } }));
+      const sessionToken = localStorage.getItem('farm-multiplayer-session') ?? '';
+      let party = null;
+      try { party = JSON.parse(localStorage.getItem('farm-party') || 'null'); }
+      catch { party = null; }
+      socket.send(JSON.stringify({ type: 'join', sessionToken, party: party ? { id: party.id, invite: party.invite } : null, character: { name: character.name, classId: character.classId, profile: character } }));
     });
     socket.addEventListener('message', (event) => {
       if (generation !== this.generation) return;
@@ -36,11 +40,12 @@ export class MultiplayerClient {
       if (message.type === 'welcome') {
         this.clientId = message.id;
         this.connected = true;
+        if (message.sessionToken) localStorage.setItem('farm-multiplayer-session', message.sessionToken);
         this.onStatus('online');
         this.onWelcome(message);
         return;
       }
-      if (message.type === 'players' || message.type === 'state') this.onPlayers(message.players ?? []);
+      if (message.type === 'state') this.onState(message);
     });
     socket.addEventListener('close', () => {
       if (generation !== this.generation) return;
@@ -60,11 +65,27 @@ export class MultiplayerClient {
     socket.addEventListener('error', () => this.onStatus('offline'));
   }
 
-  sendPosition(x, y, facing = 1, timestamp = Date.now()) {
-    if (!this.connected || timestamp - this.lastSentAt < 50) return;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    this.lastSentAt = timestamp;
-    this.socket.send(JSON.stringify({ type: 'move', x, y, facing }));
+  sendAction(action, data = {}) {
+    if (!this.connected || this.socket?.readyState !== WebSocket.OPEN) return false;
+    this.socket.send(JSON.stringify({ type: 'action', action, data }));
+    return true;
+  }
+
+  setAutoEnabled(autoEnabled) {
+    if (!this.connected || this.socket?.readyState !== WebSocket.OPEN) return false;
+    this.socket.send(JSON.stringify({ type: 'intent', autoEnabled: Boolean(autoEnabled) }));
+    return true;
+  }
+
+  joinParty(party) {
+    return this.sendAction('joinParty', { partyId: party?.id, invite: party?.invite });
+  }
+
+  leaveParty() { return this.sendAction('leaveParty'); }
+
+  forgetSession() {
+    localStorage.removeItem('farm-multiplayer-session');
+    this.disconnect();
   }
 
   disconnect() {

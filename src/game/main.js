@@ -30,11 +30,22 @@ if (profile.character?.status === 'dead') {
 let game;
 let scene;
 const multiplayer = new MultiplayerClient({
-  onWelcome: (message) => (scene ?? game?.scene.getScene('GameplayScene'))?.setMultiplayerWelcome(message),
-  onPlayers: (players) => {
-    (scene ?? game?.scene.getScene('GameplayScene'))?.setMultiplayerPlayers(players);
+  onWelcome: (message) => {
+    if (message.character) {
+      if (profile.character) Object.assign(profile.character, message.character);
+      else profile.character = message.character;
+    }
+    if (message.worldSeed) profile.seed = message.worldSeed;
+    (scene ?? game?.scene.getScene('GameplayScene'))?.setMultiplayerWelcome(message);
+  },
+  onState: (state) => {
+    if (state.self) {
+      if (profile.character) Object.assign(profile.character, state.self);
+      else profile.character = state.self;
+    }
+    (scene ?? game?.scene.getScene('GameplayScene'))?.setAuthoritativeState(state);
     const indicator = document.querySelector('#multiplayer-status');
-    if (indicator) indicator.textContent = `${players.length} NO MUNDO`;
+    if (indicator) indicator.textContent = `${state.players?.length ?? 0} NO MUNDO`;
   },
   onStatus: (status) => {
     const indicator = document.querySelector('#multiplayer-status');
@@ -74,9 +85,11 @@ const ui = new UIController({
     save();
   },
   onAllocate: (attribute) => {
+    if (multiplayer) { if (!multiplayer.sendAction('allocate', { attribute })) ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
     if (StatsSystem.allocate(profile.character, attribute)) { ui.render(profile.character, BiomeSystem.at(profile.character.position.x, profile.character.position.y)); save(); }
   },
   onCraft: (recipeId) => {
+    if (multiplayer) { if (!multiplayer.sendAction('craft', { recipeId })) ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
     const weapon = CraftingSystem.craft(profile.character, recipeId);
     if (!weapon) return;
     const weaponStats = StatsSystem.derived(profile.character);
@@ -87,12 +100,18 @@ const ui = new UIController({
     ui.render(profile.character, BiomeSystem.at(profile.character.position.x, profile.character.position.y)); save();
   },
   onDungeonStart: (dungeonId, solo = false) => {
+    if (multiplayer) {
+      if (!multiplayer.sendAction('enterDungeon', { dungeonId, solo })) ui.notice('Aguardando conexão com o servidor.', 'danger');
+      ui.toggleModal('dungeons-modal', false);
+      return;
+    }
     const result = scene?.enterDungeon(dungeonId, solo ? null : partyClient.party);
     if (!result?.allowed) { ui.notice(result?.reason ?? 'Não foi possível entrar na dungeon.', 'danger'); return; }
     ui.toggleModal('dungeons-modal', false);
     ui.notice(result.run.solo ? 'DUNGEON SOLO INICIADA' : 'DUNGEON EM GRUPO INICIADA', 'good');
   },
   onEquipItem: (itemId) => {
+    if (multiplayer) { if (!multiplayer.sendAction('equip', { itemId })) ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
     const character = profile.character;
     const changed = itemId ? EquipmentSystem.equip(character, itemId) : true;
     if (!changed) return;
@@ -104,6 +123,7 @@ const ui = new UIController({
     ui.render(character, BiomeSystem.at(character.position.x, character.position.y)); audio.playUi('upgrade'); save();
   },
   onSalvage: (keys) => {
+    if (multiplayer) { if (!multiplayer.sendAction('salvage', { keys })) ui.notice('Aguardando conexão com o servidor.', 'danger'); ui.clearItemSelection(); return; }
     const weaponIds = keys.filter((key) => key.startsWith('weapon:')).map((key) => key.slice(7));
     const resourceIds = keys.filter((key) => key.startsWith('resource:')).map((key) => key.slice(9));
     const result = EquipmentSystem.salvage(profile.character, weaponIds, resourceIds);
@@ -113,9 +133,11 @@ const ui = new UIController({
   },
   onTeleportTown: () => {
     if (!profile.character || profile.character.status !== 'alive') return;
+    if (multiplayer) { if (!multiplayer.sendAction('teleportTown')) ui.notice('Aguardando conexão com o servidor.', 'danger'); ui.toggleModal('world-map-modal', false); return; }
     scene?.teleportToTown(); ui.toggleModal('world-map-modal', false); save();
   },
   onUpgradeSkill: (skillId) => {
+    if (multiplayer) { if (!multiplayer.sendAction('upgradeSkill', { skillId })) ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
     if (!SkillProgression.upgrade(profile.character, skillId)) return;
     audio.playUi('upgrade');
     const skill = SkillProgression.catalog(profile.character.classId).find((entry) => entry.id === skillId);
@@ -125,23 +147,46 @@ const ui = new UIController({
   },
   onUiSound: (action) => audio.playUi(action),
   onUsePotion: (kind) => {
+    if (multiplayer) { if (!multiplayer.sendAction('usePotion', { kind })) ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
     const used = scene?.usePotion(kind);
     if (used && profile.character) ui.render(profile.character, BiomeSystem.at(profile.character.position.x, profile.character.position.y));
   },
   onPotionSettings: (kind, change) => {
+    if (multiplayer) {
+      if ('enabled' in change && !multiplayer.sendAction('setAutoPotion', { key: `${kind}Enabled`, value: change.enabled })) ui.notice('Aguardando conexão com o servidor.', 'danger');
+      if ('threshold' in change && !multiplayer.sendAction('setAutoPotion', { key: `${kind}Threshold`, value: change.threshold })) ui.notice('Aguardando conexão com o servidor.', 'danger');
+      audio.playUi('click');
+      return;
+    }
     profile.character.autoPotion ??= { hpEnabled: true, manaEnabled: true, hpThreshold: 60, manaThreshold: 35 };
     if ('enabled' in change) profile.character.autoPotion[`${kind}Enabled`] = change.enabled;
     if ('threshold' in change) profile.character.autoPotion[`${kind}Threshold`] = change.threshold;
     ui.updateAutoSettingsStatus(profile.character);
     audio.playUi('click'); save();
   },
-  onToggleAuto: () => scene?.toggleAuto(),
+  onToggleAuto: () => {
+    if (multiplayer) {
+      const next = !profile.character?.autoEnabled;
+      if (!multiplayer.setAutoEnabled(next)) { ui.notice('Aguardando conexão com o servidor.', 'danger'); return; }
+      ui.setAutoEnabled(next);
+      return next;
+    }
+    return scene?.toggleAuto();
+  },
   onPartyCreate: async () => {
-    try { const party = await partyClient.create(profile.character?.name); ui.renderParty(party); ui.showPartyInvite(partyClient.getInviteLink()); }
+    try {
+      const party = await partyClient.create(profile.character?.name);
+      if (!multiplayer.joinParty(party)) ui.notice('Aguardando conexão com o servidor.', 'danger');
+      ui.renderParty(party); ui.showPartyInvite(partyClient.getInviteLink());
+    }
     catch (error) { ui.notice(error.message, 'danger'); }
   },
   onPartyJoin: async (link) => {
-    try { const party = await partyClient.join(link, profile.character?.name); ui.renderParty(party); ui.notice('VOCÊ ENTROU NO GRUPO', 'good'); }
+    try {
+      const party = await partyClient.join(link, profile.character?.name);
+      if (!multiplayer.joinParty(party)) ui.notice('Aguardando conexão com o servidor.', 'danger');
+      ui.renderParty(party); ui.notice('VOCÊ ENTROU NO GRUPO', 'good');
+    }
     catch (error) { ui.notice(error.message, 'danger'); }
   },
   onPartyShare: async () => {
@@ -153,6 +198,9 @@ const ui = new UIController({
   },
   getParty: () => partyClient.party,
   onNewJourney: () => {
+    multiplayer.leaveParty();
+    partyClient.clear();
+    multiplayer.forgetSession();
     if (profile.character?.status === 'alive') {
       profile.history.push({ characterId: profile.character.id, name: profile.character.name, classId: profile.character.classId, cause: 'Jornada encerrada pelo jogador', level: profile.character.level, endedAt: Date.now() });
     } else if (profile.character?.deathHistory?.length) {
@@ -208,6 +256,7 @@ function joinPendingParty(name) {
   const url = new URL(location.href);
   if (!url.searchParams.has('party') || !url.searchParams.has('invite')) return;
   partyClient.join(location.href, name).then((party) => {
+    multiplayer.joinParty(party);
     ui.renderParty(party); ui.toggleModal('party-modal', true); ui.notice('VOCÊ ENTROU NO GRUPO', 'good');
   }).catch((error) => ui.notice(error.message, 'danger'));
 }

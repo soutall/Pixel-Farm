@@ -1,9 +1,14 @@
 export class PartyClient {
-  constructor() { this.party = null; this.pollTimer = null; }
+  constructor() {
+    this.pollTimer = null;
+    try { this.party = JSON.parse(localStorage.getItem('farm-party') || 'null'); }
+    catch { this.party = null; }
+  }
   async create(name) {
     const response = await fetch('/api/parties', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
     if (!response.ok) throw new Error('Não foi possível criar o grupo.');
     this.party = await response.json();
+    localStorage.setItem('farm-party', JSON.stringify(this.party));
     this.startPolling();
     return this.party;
   }
@@ -25,14 +30,16 @@ export class PartyClient {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? 'Não foi possível entrar no grupo.');
     this.party = { ...result, invite: invitation.invite };
+    localStorage.setItem('farm-party', JSON.stringify(this.party));
     this.startPolling();
-    return result;
+    return this.party;
   }
   async refresh() {
     if (!this.party?.id) return null;
     const response = await fetch(`/api/parties/${encodeURIComponent(this.party.id)}`, { cache: 'no-store' });
     if (!response.ok) { this.party = null; return null; }
     this.party = { ...await response.json(), invite: this.party.invite };
+    localStorage.setItem('farm-party', JSON.stringify(this.party));
     return this.party;
   }
   getInviteLink() {
@@ -41,6 +48,12 @@ export class PartyClient {
     url.searchParams.set('party', this.party.id);
     url.searchParams.set('invite', this.party.invite);
     return url.toString();
+  }
+  clear() {
+    clearInterval(this.pollTimer);
+    this.party = null;
+    localStorage.removeItem('farm-party');
+    document.dispatchEvent(new CustomEvent('farm-party-updated', { detail: null }));
   }
   startPolling() {
     clearInterval(this.pollTimer);
