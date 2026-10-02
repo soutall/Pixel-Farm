@@ -1,0 +1,17 @@
+{
+  "name": "farm-of-pixel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FARM OF PIXEL — RPG idle 2D procedural com Phaser 3 e morte permanente.",
+  "scripts": {
+    "start": "node src/server/server.js",
+    "dev": "node --watch src/server/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "phaser": "^3.90.0",
+    "ws": "^8.22.0"
+  }
+}

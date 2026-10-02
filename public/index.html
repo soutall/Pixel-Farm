@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101912" />
+  <title>FARM OF PIXEL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Press+Start+2P&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/hud.css" />
+  <link rel="stylesheet" href="/interface-overhaul.css" />
+  <link rel="stylesheet" href="/farm-hud.css" />
+  <link rel="stylesheet" href="/farm-overlay-fixes.css" />
+  <link rel="stylesheet" href="/farm-polish.css" />
+  <link rel="stylesheet" href="/expedition-ui.css" />
+  <link rel="stylesheet" href="/expedition-layout.css" />
+  <link rel="stylesheet" href="/dungeon-filter.css" />
+  <link rel="stylesheet" href="/safe-town.css" />
+  <link rel="stylesheet" href="/server-clock.css" />
+  <link rel="stylesheet" href="/boot-visual.css" />
+  <script type="importmap">{"imports":{"phaser":"/node_modules/phaser/dist/phaser.esm.js"}}</script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="world-status"><span class="live-dot"></span><span id="biome-label">FLORESTA INICIAL</span><span class="status-separator">/</span><span id="coords-label">0, 0</span><span class="status-separator">/</span><span id="multiplayer-status" class="multiplayer-status">OFFLINE</span></div>
+      <div class="header-right"><span class="seed-label">SEED <b id="seed-label">—</b></span></div>
+    </header>
+    <section class="game-layout">
+      <section class="world-column">
+        <div class="canvas-wrap" id="game-container">
+          <div id="game-loading" class="game-loading"><span class="loading-rune">✦</span><b>CARREGANDO O REINO</b><small>Preparando personagem e mundo...</small></div>
+          <div class="canvas-vignette"></div>
+          <div class="world-chip"><span class="chip-icon">✦</span><span id="zone-label">O BOSQUE SEM NOME</span></div>
+          <div id="safe-zone-badge" class="safe-zone-badge hidden"><span>🛡</span><b>CIDADE SEGURA</b><small>ÁREA SEM COMBATE</small></div>
+          <div id="dungeon-progress" class="dungeon-progress hidden"><span>☾</span><b id="dungeon-progress-label">CRIPTA · ONDA 1/3</b><span id="dungeon-progress-enemies">0 INIMIGOS</span></div>
+          <div class="vitals-hud"><div class="vital-track hp-vital"><span class="vital-icon">♥</span><div class="vital-info"><span class="vital-label">VIDA</span><div class="vital-meter"><i id="hp-fill"></i></div></div><b id="hp-hud-label">— / —</b></div><div class="vital-track mana-vital"><span class="vital-icon">✧</span><div class="vital-info"><span class="vital-label">MANA</span><div class="vital-meter"><i id="mana-fill"></i></div></div><b id="mana-hud-label">— / —</b></div></div>
+          <div class="minimap-frame"><div class="mini-heading"><span title="Mapa de recursos e monstros próximos">⌖ RADAR</span><span id="mini-coords">0 · 0</span></div><canvas id="minimap" width="180" height="130" aria-label="Minimapa da área próxima"></canvas><div class="server-clock"><span id="clock-icon">☀</span><b id="clock-time">00:00</b><small id="clock-label">HORA DO SERVIDOR</small></div></div>
+          <div id="skill-hud" class="skill-hud" aria-label="Habilidades e recargas"></div>
+          <div id="level-up-toast" class="level-up-toast hidden"><span>✦</span><b>NÍVEL 2</b><small>SEU PODER CRESCE</small><span>✦</span></div>
+          <div id="action-dock" class="action-dock" aria-label="Menu da jornada">
+            <button id="open-skills" class="dock-button" title="Habilidades [K]" aria-label="Habilidades"><span>✦</span><small>SKILLS</small><b id="skill-points-top">0</b></button>
+            <button id="open-world-map" class="dock-button" title="Mapa-múndi [M]" aria-label="Mapa-múndi"><span>⌖</span><small>MAPA</small></button>
+            <button id="open-stat-guide" class="dock-button" title="Guia de atributos [I]" aria-label="Guia de atributos"><span>ⓘ</span><small>STATUS</small></button>
+            <button id="toggle-journal" class="dock-button" title="Mostrar ou esconder diário [J]" aria-label="Mostrar ou esconder diário" aria-expanded="false"><span>▤</span><small>DIÁRIO</small></button>
+            <button id="open-inventory" class="dock-button" title="Abrir mochila [B]" aria-label="Mochila"><span>🎒</span><small>MOCHILA</small></button>
+            <button id="open-crafting" class="dock-button" title="Oficina de crafting [C]" aria-label="Oficina de crafting"><span>⚒</span><small>OFICINA</small></button>
+            <button id="open-party" class="dock-button" title="Grupo e convites [P]" aria-label="Grupo"><span>♟</span><small>GRUPO</small></button>
+            <button id="open-dungeons" class="dock-button" title="Lista de dungeons [G]" aria-label="Dungeons"><span>☾</span><small>DUNGEONS</small></button>
+            <button id="open-auto-potions" class="dock-button" title="Configurar poções automáticas" aria-label="Configurar poções automáticas"><span>⚙</span><small>AUTO ITENS</small></button>
+            <button id="toggle-auto" class="dock-button active" title="Pausar exploração automática [Espaço]" aria-label="Pausar automação" aria-pressed="true"><span id="auto-icon">Ⅱ</span><small id="auto-label">AUTO ON</small></button>
+            <button id="use-hp-potion" class="dock-button potion-button" title="Poção de vida · recarga 5 s" aria-label="Usar poção de vida"><span>🧪</span><small>VIDA</small><b id="hp-potion-timer" class="potion-timer"></b></button>
+            <button id="use-mana-potion" class="dock-button potion-button mana-potion" title="Poção de mana · recarga 5 s" aria-label="Usar poção de mana"><span>⚗</span><small>MANA</small><b id="mana-potion-timer" class="potion-timer"></b></button>
+            <button id="new-run" class="dock-button new-run-button" title="Nova jornada / personagem permanente" aria-label="Nova jornada"><span>↻</span><small>NOVA VIDA</small></button>
+          </div>
+          <div id="floating-notices" class="floating-notices"></div>
+          <div id="death-overlay" class="death-overlay hidden">
+            <span class="eyebrow">FIM DA JORNADA</span><h2>Uma vida se apaga.</h2><p>Esse personagem não pode ser revivido. Seu legado permanece no histórico.</p><button id="create-again" class="primary-button">CRIAR NOVO PERSONAGEM <span>→</span></button>
+          </div>
+          <div id="character-modal" class="modal-backdrop">
+            <div class="character-modal">
+              <span class="eyebrow">UMA NOVA LENDA COMEÇA</span><h1>Escolha seu<br /><em>caminho.</em></h1>
+              <label class="field-label" for="character-name">NOME DO PERSONAGEM</label><input id="character-name" maxlength="18" value="Viajante" autocomplete="off" />
+              <div class="class-options">
+                <button class="class-card selected" data-class="warrior"><span class="class-symbol">⚔</span><strong>Guerreiro</strong><small>Força e resistência</small></button>
+                <button class="class-card" data-class="mage"><span class="class-symbol">✧</span><strong>Mago</strong><small>Magia e precisão</small></button>
+                <button class="class-card" data-class="archer"><span class="class-symbol">⌖</span><strong>Arqueiro</strong><small>Agilidade e evasão</small></button>
+              </div>
+              <button id="begin-adventure" class="primary-button full">COMEÇAR NO CENTRO <span>→</span></button>
+              <p class="permadeath-note">✦ MORTE PERMANENTE · SUA HISTÓRIA É ÚNICA</p>
+            </div>
+          </div>
+          <div id="skills-modal" class="modal-backdrop utility-modal hidden">
+            <section class="utility-window skill-window" role="dialog" aria-modal="true" aria-labelledby="skills-title">
+              <header class="utility-header"><div><span class="eyebrow">PROGRESSÃO DE COMBATE</span><h2 id="skills-title">Árvore de habilidades</h2></div><button class="close-modal" data-close-modal="skills-modal" aria-label="Fechar">×</button></header>
+              <p class="utility-copy">Invista pontos para aprimorar suas técnicas. Cada habilidade pode chegar ao nível 10.</p>
+              <div class="skill-points-banner"><span>✦ PONTOS DE HABILIDADE</span><b id="skill-points-modal">0</b></div>
+              <div id="skill-tree" class="skill-tree"></div>
+              <footer class="utility-footer"><span>1 ponto de habilidade por nível de personagem</span><button class="secondary-button" data-close-modal="skills-modal">VOLTAR À JORNADA</button></footer>
+            </section>
+          </div>
+          <div id="world-map-modal" class="modal-backdrop utility-modal hidden">
+            <section class="utility-window world-map-window" role="dialog" aria-modal="true" aria-labelledby="world-map-title">
+              <header class="utility-header"><div><span class="eyebrow">CARTOGRAFIA DA EXPLORAÇÃO</span><h2 id="world-map-title">Mapa-múndi</h2></div><button class="close-modal" data-close-modal="world-map-modal" aria-label="Fechar">×</button></header>
+              <p class="utility-copy">O mundo se expande pela seed. A trilha clara mostra por onde seu personagem já passou.</p>
+              <canvas id="world-map" width="760" height="440" aria-label="Mapa-múndi e biomas explorados"></canvas>
+              <div class="map-legend"><span><i class="map-dot player-dot"></i>VOCÊ</span><span><i class="map-dot trail-dot"></i>TRILHA</span><span><i class="map-dot center-dot"></i>CENTRO (0,0)</span></div>
+              <footer class="utility-footer"><span id="world-map-location">Posição: 0, 0 · Floresta inicial</span><span class="map-footer-actions"><button id="teleport-town" class="secondary-button">⌂ VOLTAR À CIDADE</button><button class="secondary-button" data-close-modal="world-map-modal">FECHAR MAPA</button></span></footer>
+            </section>
+          </div>
+          <div id="stat-guide-modal" class="modal-backdrop utility-modal hidden">
+            <section class="utility-window stat-guide-window" role="dialog" aria-modal="true" aria-labelledby="stat-guide-title">
+              <header class="utility-header"><div><span class="eyebrow">GUIA DO PERSONAGEM</span><h2 id="stat-guide-title">O que cada atributo faz</h2></div><button class="close-modal" data-close-modal="stat-guide-modal" aria-label="Fechar guia">×</button></header>
+              <p class="utility-copy">Atributos básicos são distribuídos ao subir de nível. Os derivados são calculados automaticamente.</p>
+              <div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>ÍCONE</th><th>ATRIBUTO</th><th>TIPO</th><th>EFEITO NO PERSONAGEM</th></tr></thead><tbody>
+                <tr><td>⚔</td><th>Força</th><td>Básico</td><td>Aumenta o dano físico dos ataques e contribui para a defesa física.</td></tr>
+                <tr><td>➤</td><th>Agilidade</th><td>Básico</td><td>Aumenta a esquiva e contribui um pouco para a defesa física.</td></tr>
+                <tr><td>⌖</td><th>Destreza</th><td>Básico</td><td>Aumenta a precisão dos ataques e dá um pequeno bônus de dano.</td></tr>
+                <tr><td>✧</td><th>Inteligência</th><td>Básico</td><td>Aumenta a mana máxima em 12 por ponto e contribui para a defesa mágica.</td></tr>
+                <tr><td>♥</td><th>Vida</th><td>Básico</td><td>Aumenta a vida máxima em 10 por ponto e contribui um pouco para a defesa mágica.</td></tr>
+                <tr><td>▣</td><th>Defesa física</th><td>Derivado</td><td>Calculada por Força e Agilidade; reduz parte do dano físico recebido.</td></tr>
+                <tr><td>◇</td><th>Defesa mágica</th><td>Derivado</td><td>Calculada por Inteligência e Vida; reservada para futuras fontes de dano mágico.</td></tr>
+                <tr><td>✦</td><th>Mana máxima</th><td>Derivado</td><td>Calculada pela Inteligência. Regenera 1,5 ponto por segundo e é consumida pelas habilidades.</td></tr>
+                <tr><td>◎</td><th>Precisão</th><td>Derivado</td><td>Calculada pela Destreza; define a chance percentual de acertar ataques.</td></tr>
+                <tr><td>◌</td><th>Esquiva</th><td>Derivado</td><td>Calculada pela Agilidade; dá uma chance de evitar completamente um golpe físico.</td></tr>
+              </tbody></table></div>
+              <footer class="utility-footer"><span>Os valores atuais ficam no painel de atributos.</span><button class="secondary-button" data-close-modal="stat-guide-modal">ENTENDI</button></footer>
+            </section>
+          </div>
+          <div id="inventory-modal" class="modal-backdrop utility-modal hidden">
+            <section class="utility-window inventory-window" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
+              <header class="utility-header"><div><span class="eyebrow">EQUIPAMENTO E TESOUROS</span><h2 id="inventory-title">🎒 Mochila</h2></div><button class="close-modal" data-close-modal="inventory-modal" aria-label="Fechar mochila">×</button></header>
+              <div class="equipment-panel"><div class="equipment-panel-heading"><b>⌖ EQUIPAMENTO</b><small>Compare e equipe seus itens</small></div><div id="equipment-slots" class="equipment-slots"></div></div>
+              <div class="inventory-toolbar"><div id="inventory-tabs" class="inventory-tabs"><button class="inventory-tab active" data-tab="collected">⌑ Coletados</button><button class="inventory-tab" data-tab="weapons">⚔ Armas</button><button class="inventory-tab" data-tab="gear">◈ Armaduras</button><button class="inventory-tab" data-tab="consumables">⚗ Consumíveis</button><button class="inventory-tab" data-tab="special">✧ Especiais</button></div><div class="inventory-actions"><button id="organize-inventory" class="secondary-button" title="Ordenar itens">⇅ ORGANIZAR</button><button id="salvage-selected" class="secondary-button salvage-button" disabled>♲ DESMONTAR (<span id="selected-item-count">0</span>) → FRAGMENTOS</button></div></div>
+              <div id="inventory-content" class="inventory-content"></div>
+              <footer class="utility-footer"><span id="inventory-summary">0 itens · Mochila organizada</span><button class="secondary-button" data-close-modal="inventory-modal">FECHAR MOCHILA</button></footer>
+            </section>
+          </div>
+          <div id="item-compare-modal" class="modal-backdrop utility-modal hidden"><section class="utility-window compare-window" role="dialog" aria-modal="true" aria-labelledby="compare-title"><header class="utility-header"><div><span class="eyebrow">ANÁLISE DE EQUIPAMENTO</span><h2 id="compare-title">Comparar itens</h2></div><button class="close-modal" data-close-modal="item-compare-modal" aria-label="Fechar comparação">×</button></header><div id="compare-content" class="compare-content"></div><footer class="utility-footer"><span>Verde indica melhoria · vermelho indica redução.</span><span><button id="equip-compared-item" class="primary-button">EQUIPAR ITEM</button><button class="secondary-button" data-close-modal="item-compare-modal">FECHAR</button></span></footer></section></div>
+          <div id="crafting-modal" class="modal-backdrop utility-modal hidden"><section class="utility-window inventory-window" role="dialog" aria-modal="true" aria-labelledby="crafting-title"><header class="utility-header"><div><span class="eyebrow">FORJA E OFÍCIO</span><h2 id="crafting-title">⚒ Oficina</h2></div><button class="close-modal" data-close-modal="crafting-modal" aria-label="Fechar oficina">×</button></header><p class="utility-copy">Cada arma tem desenho, qualidade e atributos próprios. A arma criada é equipada automaticamente.</p><div id="crafting-list" class="crafting-list"></div><footer class="utility-footer"><span>Atributos bônus são sorteados ao criar o equipamento.</span><button class="secondary-button" data-close-modal="crafting-modal">VOLTAR</button></footer></section></div>
+          <div id="auto-potions-modal" class="modal-backdrop utility-modal hidden"><section class="utility-window potion-settings-window" role="dialog" aria-modal="true" aria-labelledby="auto-potions-title"><header class="utility-header"><div><span class="eyebrow">CONSUMÍVEIS AUTOMÁTICOS</span><h2 id="auto-potions-title">⚙ Poções automáticas</h2></div><button class="close-modal" data-close-modal="auto-potions-modal" aria-label="Fechar configurações">×</button></header><p class="utility-copy">Ative o uso automático e escolha o percentual de vida ou mana em que a poção deve ser usada. Cada tipo tem recarga independente de 5 segundos.</p><label class="auto-potion-toggle"><input id="auto-hp-enabled" type="checkbox"><span>🧪 Usar poção de vida automaticamente</span></label><label class="threshold-setting"><span>Usar quando a vida estiver abaixo de <b id="hp-threshold-value">35%</b></span><input id="hp-threshold" type="range" min="10" max="90" step="5" value="35"></label><label class="auto-potion-toggle"><input id="auto-mana-enabled" type="checkbox"><span>⚗ Usar poção de mana automaticamente</span></label><label class="threshold-setting"><span>Usar quando a mana estiver abaixo de <b id="mana-threshold-value">20%</b></span><input id="mana-threshold" type="range" min="10" max="90" step="5" value="20"></label><footer class="utility-footer"><span>Configuração salva no personagem.</span><button class="secondary-button" data-close-modal="auto-potions-modal">CONCLUÍDO</button></footer></section></div>
+          <div id="party-modal" class="modal-backdrop utility-modal hidden"><section class="utility-window party-window" role="dialog" aria-modal="true" aria-labelledby="party-title"><header class="utility-header"><div><span class="eyebrow">AVENTURE COM ALIADOS</span><h2 id="party-title">♟ Grupo</h2></div><button class="close-modal" data-close-modal="party-modal" aria-label="Fechar grupo">×</button></header><p class="utility-copy">Crie um grupo e envie o link de convite para qualquer aliado. O link permite entrar de qualquer distância.</p><div id="party-current" class="party-current"><span>◇</span><b>Você ainda não está em um grupo</b></div><div class="party-actions"><button id="create-party" class="primary-button">CRIAR GRUPO <span>✦</span></button><button id="share-party" class="secondary-button" disabled>⤴ COMPARTILHAR CONVITE</button></div><label class="field-label" for="party-invite-link">OU ENTRE PELO LINK DE CONVITE</label><div class="party-join-row"><input id="party-invite-link" placeholder="Cole o link do aliado aqui" autocomplete="off"><button id="join-party" class="secondary-button">ENTRAR</button></div><div id="party-members" class="party-members"></div><footer class="utility-footer"><span>Convites ativos neste servidor enquanto ele estiver online.</span><button class="secondary-button" data-close-modal="party-modal">FECHAR</button></footer></section></div>
+          <div id="dungeons-modal" class="modal-backdrop utility-modal hidden"><section class="utility-window dungeon-window" role="dialog" aria-modal="true" aria-labelledby="dungeons-title"><header class="utility-header"><div><span class="eyebrow">EXPEDIÇÕES E INSTÂNCIAS</span><h2 id="dungeons-title">☾ Dungeons</h2></div><button class="close-modal" data-close-modal="dungeons-modal" aria-label="Fechar dungeons">×</button></header><div class="dungeon-filter-row"><label>✧ NÍVEL <select id="dungeon-level-filter"><option value="all">Todos</option><option value="1-15">1–15</option><option value="15-20">15–20</option><option value="20-30">20–30</option></select></label><label>⚒ MECÂNICA <select id="dungeon-mechanic-filter"><option value="all">Todas</option><option value="swarm">Enxame</option><option value="flight">Combate aéreo</option><option value="elite">Elite/chefe</option></select></label></div><div id="dungeon-list" class="dungeon-list"></div><footer class="utility-footer"><span id="dungeon-status">Solo ou grupo completo de 4 aventureiros.</span><button class="secondary-button" data-close-modal="dungeons-modal">FECHAR</button></footer></section></div>
+        </div>
+        <div class="world-footer"><span><b class="legend-dot resource"></b> RECURSO</span><span><b class="legend-dot monster"></b> CRIATURA</span><span class="auto-copy">SEM MICROGERENCIAMENTO. SÓ DESTINO.</span></div>
+      </section>
+      <aside class="sidebar">
+        <section class="panel character-panel">
+          <div class="section-heading"><span>PERSONAGEM</span><span class="level-badge" id="level-badge">NV. 1</span></div>
+          <div class="character-heading"><div class="avatar" id="avatar-icon">⚔</div><div><h2 id="hero-name">Viajante</h2><span id="hero-class" class="muted-label">GUERREIRO</span></div></div>
+          <div class="xp-row"><span>EXPERIÊNCIA</span><span id="xp-label">0 / 30</span></div><div class="xp-track"><span id="xp-fill"></span></div>
+          <div class="vitals"><span><b class="health-dot"></b><span id="health-label">100 / 100</span></span><span id="state-label">EXPLORANDO</span></div>
+        </section>
+        <section class="panel attribute-panel">
+          <div class="section-heading"><span>ATRIBUTOS</span><span class="points-badge" id="points-label">0 PONTOS</span></div>
+          <div id="attribute-list" class="attribute-list"></div>
+        </section>
+        <section class="panel inventory-panel">
+          <div class="section-heading"><span>MOCHILA</span><span class="inventory-count" id="inventory-count">0 ITENS</span></div>
+          <div id="resource-list" class="resource-list"></div>
+          <div class="weapon-row"><span class="weapon-icon" id="weapon-icon">◇</span><span><b id="weapon-name">Sem arma</b><small id="weapon-detail">Sua primeira criação aguarda.</small></span><span class="equipped-tag" id="equipped-tag">—</span></div>
+          <button id="craft-button" class="craft-button" disabled><span>✦</span><span><b>CRIAR ARMA</b><small id="craft-recipe">1× Slime Gel → Greatsword</small></span><span class="craft-arrow">↗</span></button>
+        </section>
+        <section class="panel journey-panel collapsed" id="journey-panel"><div class="section-heading"><span>DIÁRIO DE VIAGEM</span><button id="toggle-journal-panel" class="journal-toggle" title="Mostrar ou esconder diário" aria-label="Mostrar ou esconder diário" aria-expanded="false">⌄</button></div><div id="event-log" class="event-log"></div></section>
+        <footer class="sidebar-footer"><span>FARM OF PIXEL <b>·</b> PROTÓTIPO 0.1</span><span>PROGRESSO LOCAL <b id="save-status">SALVO</b></span></footer>
+      </aside>
+    </section>
+  </main>
+  <script type="module" src="/src/game/main.js"></script>
+</body>
+</html>

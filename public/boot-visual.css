@@ -1,0 +1,12 @@
+/* Ordem de pintura explícita: Phaser abaixo das camadas HTML interativas em navegadores móveis. */
+.multiplayer-status{color:#b5df76;font:9px var(--mono);letter-spacing:.06em;white-space:nowrap}
+#game-container>canvas:not(.night-veil){position:absolute!important;inset:0!important;z-index:0!important;display:block;width:100%!important;height:100%!important;object-fit:cover}
+#game-container>.night-veil{z-index:1!important}
+#game-container>.canvas-vignette{z-index:2!important}
+#game-container>.world-chip,#game-container>.minimap-frame,#game-container>.vitals-hud,#game-container>.skill-hud,#game-container>.action-dock,#game-container>.floating-notices,#game-container>.level-up-toast,#game-container>.safe-zone-badge{z-index:4!important}
+#game-container>.modal-backdrop{z-index:50!important;pointer-events:auto}
+#game-container>#character-modal{z-index:80!important}
+#game-container>#death-overlay{z-index:90!important}
+#game-container>.utility-modal{z-index:120!important}
+.game-loading{position:absolute;z-index:200;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;background:radial-gradient(ellipse at center,#263829f2,#101812f7);color:#d9ebc1;pointer-events:none;transition:opacity .35s}.game-loading.hidden{display:none}.game-loading b{font:10px var(--mono);letter-spacing:.18em}.game-loading small{color:#91a18d;font:8px var(--mono)}.loading-rune{color:#b5df76;font-size:27px;animation:rune-turn 1.5s ease-in-out infinite}@keyframes rune-turn{50%{transform:rotate(180deg) scale(1.25);opacity:.6}}
+.game-loading.failed{pointer-events:auto;background:#171413f5;color:#f2d3bd}.game-loading.failed b{color:#ffc68f}.game-loading.failed small{max-width:min(85%,520px);color:#d8bfae;text-align:center;line-height:1.6}.game-loading .reload-game{margin-top:7px;padding:10px 15px;border:1px solid #967c56;border-radius:5px;background:#303326;color:#ecdfbd;font:9px var(--mono);letter-spacing:.08em;pointer-events:auto;cursor:pointer}
